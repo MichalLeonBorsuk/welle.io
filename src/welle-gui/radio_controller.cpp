@@ -793,7 +793,8 @@ void CRadioController::labelTimerTimeout()
         if (not label.empty()) {
             const auto qlabel = QString::fromStdString(label);
             emit newStationNameReceived(qlabel, sId, currentChannel);
-            qDebug() << "RadioController: Found service " << qPrintable(QString::number(sId, 16).toUpper()) << qlabel;
+            qDebug() << "RadioController: Found service "
+                     << qPrintable(QString::number(sId, 16).toUpper()) << qlabel;
 
             if (currentService == sId) {
                 currentTitle = qlabel;

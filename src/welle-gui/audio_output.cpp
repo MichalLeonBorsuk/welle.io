@@ -89,13 +89,10 @@ void CAudioThread::init(int sampleRate)
     }
 
     audioFormat.setSampleRate(sampleRate);
-    audioFormat.setChannelCount(2);
-    audioFormat.setSampleSize(16);
-    audioFormat.setCodec("audio/pcm");
-    audioFormat.setByteOrder(QAudioFormat::LittleEndian);
-    audioFormat.setSampleType(QAudioFormat::SignedInt);
+    audioFormat.setChannelConfig(QAudioFormat::ChannelConfigStereo);
+    audioFormat.setSampleFormat(QAudioFormat::Int16);
 
-    info = new QAudioDeviceInfo(QAudioDeviceInfo::defaultOutputDevice());
+    info = new QAudioDevice(QMediaDevices::defaultAudioOutput());
     if (!info->isFormatSupported(audioFormat)) {
         qDebug() << "Audio: \"audio/pcm\" 16-bit stereo not supported. "
                     "Your audio may not work.";
@@ -104,19 +101,15 @@ void CAudioThread::init(int sampleRate)
 #endif
     }
 
-    qDebug() << "Audio: Current sound output" << info->deviceName();
+    qDebug() << "Audio: Current sound output" << info->description();
+    //qDebug() << "Audio: bytesPerSample: " << audioFormat.bytesPerSample();
+    //qDebug() << "Audio: bytesPerFrame: " << audioFormat.bytesPerFrame();
 
     //foreach (const QAudioDeviceInfo &deviceInfo, QAudioDeviceInfo::availableDevices(QAudio::AudioOutput))
     //  qDebug() << "Audio:" << "Available sound output device: " << deviceInfo.deviceName();
 
-    audioOutput = new QAudioOutput(*info, audioFormat, this);
-    audioOutput->setBufferSize(audioOutput->bufferSize()*2);
-    connect(audioOutput, &QAudioOutput::stateChanged, this, &CAudioThread::handleStateChanged);
-
-    //audioIODevice.start();
-
-    // Disable audio at startup. It will be started through "checkAudioBufferTimeout" method when needed
-    //audioOutput->start(&audioIODevice);
+    audioOutput = new QAudioSink(*info, audioFormat, this);
+    connect(audioOutput, &QAudioSink::stateChanged, this, &CAudioThread::handleStateChanged);
 }
 
 void CAudioThread::run()
@@ -161,8 +154,6 @@ void CAudioThread::handleStateChanged(QAudio::State newState)
     case QAudio::IdleState:
         qDebug() << "Audio:"
                  << "IdleState";
-        // Necessary to avoid a IdleState, ActiveState, IdleState, ActiveState ... loop under Ubuntu. I don't know why.
-        audioOutput->stop();
         break;
     default:
         qDebug() << "Audio:"
@@ -173,7 +164,7 @@ void CAudioThread::handleStateChanged(QAudio::State newState)
 
 void CAudioThread::checkAudioBufferTimeout()
 {
-    int32_t Bytes = buffer.GetRingBufferReadAvailable();
+    int32_t Bytes = buffer.GetRingBufferReadAvailable() * 2;
 
     // Start audio if bytes are available and audio is not active
     if (audioOutput && Bytes && currentState != QAudio::ActiveState) {
@@ -206,12 +197,16 @@ void CAudioIODevice::flush()
 
 qint64 CAudioIODevice::readData(char* data, qint64 len)
 {
+    if(len == 0)
+        return 0;
+
     qint64 total = 0;
 
     total = buffer.getDataFromBuffer(data, len / 2); // we have int16 samples
 
     // If the buffer is empty return zeros.
     if (total == 0) {
+        //qDebug() << "Audio:" << "Buffer is empty, fill with zeros.";
         memset(data, 0, len);
         total = len / 2;
     }
@@ -229,7 +224,8 @@ qint64 CAudioIODevice::writeData(const char* data, qint64 len)
 
 qint64 CAudioIODevice::bytesAvailable() const
 {
-    return buffer.GetRingBufferReadAvailable();
+    // Return always that data is available if not it will be handelt inside readData()
+    return 16384;
 }
 
 CAudio::CAudio(RingBuffer<int16_t>& buffer, QObject *parent) :
